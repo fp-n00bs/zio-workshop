@@ -3,13 +3,13 @@
 package net.dp.zio
 package essentials
 
-import java.io.{File, IOException}
-import java.util.concurrent.{Executors, TimeUnit}
+import java.io.{ File, IOException }
+import java.util.concurrent.{ Executors, TimeUnit }
 
 import scalaz.zio.internal.PlatformLive
 
-import scala.io.{Source, StdIn}
-import scalaz.zio.{DefaultRuntime, Fiber, IO, Managed, Runtime, Task, UIO, ZIO}
+import scala.io.{ Source, StdIn }
+import scalaz.zio.{ DefaultRuntime, Fiber, IO, Managed, Runtime, Schedule, Task, UIO, ZIO }
 
 /**
  * `ZIO[R, E, A]` is an immutable data structure that models an effect, which
@@ -98,9 +98,9 @@ object zio_values {
    * Using the `ZIO.succeedLazy` method, construct an effect that succeeds with
    * the (lazily evaluated) specified value and ascribe the correct type.
    */
-  lazy val bigList       = (1L to 100000000L).toList
-  lazy val bigListString = bigList.mkString("\n")
-  val ioString: UIO[String]      = ZIO.succeedLazy(bigListString)
+  lazy val bigList          = (1L to 100000000L).toList
+  lazy val bigListString    = bigList.mkString("\n")
+  val ioString: UIO[String] = ZIO.succeedLazy(bigListString)
 
   /**
    * EXERCISE 3
@@ -128,7 +128,7 @@ object zio_values {
    * Note: You will have to use the `.refineOrDie` method to refine the
    * `Throwable` type into something more specific.
    */
-  val getStrLn:Task[String] = Task(StdIn.readLine())
+  val getStrLn: Task[String] = Task(StdIn.readLine())
 
   /**
    * EXERCISE 6
@@ -140,8 +140,8 @@ object zio_values {
    * `Throwable` type into something more specific.
    */
   def readFile(file: File): IO[IOException, List[String]] =
-    IO.effect(Source.fromFile(file).getLines.toList).refineOrDie{
-      case io : IOException => io
+    IO.effect(Source.fromFile(file).getLines.toList).refineOrDie {
+      case io: IOException => io
     }
 
   /**
@@ -154,8 +154,8 @@ object zio_values {
    * `Throwable` type into something more specific.
    */
   def arrayUpdate[A](a: Array[A], i: Int, f: A => A): IO[ArrayIndexOutOfBoundsException, Unit] =
-    ZIO.effect(a.update(i, f(a(i)))).refineOrDie{
-      case e : ArrayIndexOutOfBoundsException => e
+    ZIO.effect(a.update(i, f(a(i)))).refineOrDie {
+      case e: ArrayIndexOutOfBoundsException => e
     }
 
   /**
@@ -166,6 +166,7 @@ object zio_values {
    */
   //Todo kan inte hitta nan losning med refineOrDie..
   def firstOrNegative1(as: List[Int]): UIO[Int] = Task.effect(as.head).orElse(ZIO.succeed(-1))
+
   /**
    * EXERCISE 9
    *
@@ -174,10 +175,13 @@ object zio_values {
    */
   val scheduledExecutor = Executors.newScheduledThreadPool(1)
   def sleep(l: Long, u: TimeUnit): UIO[Unit] =
-    UIO.effectAsync(cb => scheduledExecutor
-      .schedule(new Runnable {
-        def run(): Unit = cb(UIO.unit)
-      }, l, u))
+    UIO.effectAsync(
+      cb =>
+        scheduledExecutor
+          .schedule(new Runnable {
+            def run(): Unit = cb(UIO.unit)
+          }, l, u)
+    )
 
   /**
    * EXERCISE 10
@@ -186,9 +190,8 @@ object zio_values {
    * into a ZIO API that does not use any callbacks.
    */
   def readChunkCB(success: Array[Byte] => Unit, failure: Throwable => Unit): Unit = ???
-  val readChunkIO: Task[Array[Byte]]                                              =
-    Task.effectAsync(cb =>
-    readChunkCB(arr => cb(Task.succeed(arr)), thr => cb(Task.fail(thr))))
+  val readChunkIO: Task[Array[Byte]] =
+    Task.effectAsync(cb => readChunkCB(arr => cb(Task.succeed(arr)), thr => cb(Task.fail(thr))))
 
   /**
    * EXERCISE 11
@@ -236,7 +239,7 @@ object zio_operations {
    * Using `ZIO#map`, map an effect that succeeds with an `Int` into one that
    * succeeds with one plus that integer.
    */
-  def addOne(i: Int): UIO[Int] = IO.succeed(i).map(_+1)
+  def addOne(i: Int): UIO[Int] = IO.succeed(i).map(_ + 1)
 
   /**
    * EXERCISE 3
@@ -265,11 +268,11 @@ object zio_operations {
    */
   val int1: UIO[Int] = IO.succeed(14)
   val int2: UIO[Int] = IO.succeed(16)
-  val sum: UIO[Int]  =
+  val sum: UIO[Int] =
     for {
       i1 <- int1
       i2 <- int2
-  } yield (i1 + i2)
+    } yield (i1 + i2)
 
   /**
    * EXERCISE 5
@@ -286,7 +289,8 @@ object zio_operations {
     }
 
   def repeatN2[E](n: Int, action: IO[E, Unit]): IO[E, Unit] =
-    ???
+    if (n <= 1) action
+    else action *> repeatN2(n - 1, action)
 
   /**
    * EXERCISE 6
@@ -297,35 +301,41 @@ object zio_operations {
     if (n <= 1) 1
     else n * factorial(n - 1)
   def factorialIO(n: Int): UIO[Int] =
-    ???
+    if (n <= 1) UIO(1)
+    else factorialIO(n - 1).map(_ * n)
 
   /**
    * EXERCISE 7
    *
    * Write a new version of the factorial function, this one tail recursive.
    */
-  def factorialTailIO(n: Int, acc: Int = 1): UIO[Int] = ???
+  @scala.annotation.tailrec
+  def factorialTailIO(n: Int, acc: UIO[Int] = UIO(1)): UIO[Int] =
+    if (n <= 1) acc
+    else factorialTailIO(n - 1, acc.map(_ * n))
 
   /**
    * EXERCISE 8
    *
    * Using `ZIO#zip`, combine the result of two effects into a tuple.
    */
-  def toTuple[A, B](io1: UIO[A], io2: UIO[B]): UIO[(A, B)] = ???
+  def toTuple[A, B](io1: UIO[A], io2: UIO[B]): UIO[(A, B)] =
+    io1 zip io2
 
   /**
    * EXERCISE 9
    *
    * Using `ZIO#zipWith`, add the two values produced by the two effects.
    */
-  val combine: UIO[Int] = UIO.succeed(2).zipWith(UIO.succeed(40))(???)
+  val combine: UIO[Int] = UIO.succeed(2).zipWith(UIO.succeed(40))(_ + _)
 
   /**
    * EXERCISE 10
    *
    * Using `ZIO.foreach`, convert a list of integers into a List of String
    */
-  def convert(l: List[Int]): UIO[List[String]] = l.map(_.toString) ?
+  def convert(l: List[Int]): UIO[List[String]] =
+    ZIO.foreach(l)(x => UIO(x.toString))
 
   /**
    * EXERCISE 11
@@ -333,7 +343,8 @@ object zio_operations {
    * Using `ZIO.collectAll`
    * evaluate a list of effects and collect the result into an IO of a list with their result
    */
-  def collect(effects: List[UIO[Int]]): UIO[List[Int]] = effects ?
+  def collect(effects: List[UIO[Int]]): UIO[List[Int]] =
+    ZIO.collectAll(effects)
 
   /**
    * EXERCISE 12
@@ -341,12 +352,11 @@ object zio_operations {
    * Rewrite the following series of `flatMap`/`map` into a `for` comprehension.
    */
   val nameAsk: Task[String] =
-    Task
-      .effect(println("What is your name?"))
-      .flatMap(
-        _ =>
-          Task.effect(scala.io.StdIn.readLine()).flatMap(name => Task.effect(println(s"Hello, $name")).map(_ => name))
-      )
+    for {
+      _     <- Task.effect(println("What is your name?"))
+      input <- Task.effect(scala.io.StdIn.readLine())
+      name  <- Task.fromTry(scala.util.Try(input))
+    } yield name
 
   /**
    * EXERCISE 13
@@ -378,7 +388,19 @@ object zio_operations {
         println("You guessed wrong! The number was " + number)
     }
   }
-  lazy val playGame2: Task[Unit] = ???
+  lazy val playGame2: Task[Unit] = for {
+    number ← Task.effect(scala.util.Random.nextInt(5))
+    _      <- Task.effect(println("Enter a number between 0 - 5: "))
+    answer ← Task.effect(scala.util.Try(scala.io.StdIn.readLine().toInt).toOption)
+    _ <- answer match {
+          case None =>
+            Task.effect(println("You didn't enter an integer!")) *> playGame2
+          case Some(guess) if guess == number =>
+            Task.effect(println("You guessed right! The number was " + number))
+          case _ =>
+            Task.effect(println("You guessed wrong! The number was " + number)) *> playGame2
+        }
+  } yield ()
 }
 
 object zio_failure {
@@ -761,8 +783,7 @@ object zio_resources {
    * all content into a byte array (see Exercise 5).
    */
   def readFileTCF3(file: File): Task[List[Byte]] =
-    managedFile(file).use { inputStream =>
-      ???
+    managedFile(file).use { inputStream => ???
     }
 }
 
@@ -797,7 +818,7 @@ object zio_environment {
    *
    * Write the type of a program that requires `scalaz.zio.console.Console` and
    * which could fail with `E` or succeed with A`:
-   */
+   **/
   type ConsoleIO[E, A] = ???
 
   /**
